@@ -1,0 +1,365 @@
+// Prisma Schema for Future Industry Convergence Society
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================================
+// User Management
+// ========================================
+
+enum MemberType {
+  REGULAR
+  STUDENT
+  LIFETIME
+}
+
+enum UserRole {
+  MEMBER
+  REVIEWER
+  EDITOR
+  ADMIN
+}
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  passwordHash      String
+  nameKo            String
+  nameEn            String
+  affiliationKo     String
+  affiliationEn     String
+  position          String
+  phone             String
+  address           String?
+  orcid             String?
+  memberType        MemberType @default(REGULAR)
+  membershipExpiry  DateTime?
+  isReviewer        Boolean   @default(false)
+  isEditor          Boolean   @default(false)
+  emailVerified     Boolean   @default(false)
+  emailVerifyToken  String?
+  resetPasswordToken String?
+  resetPasswordExpiry DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  roles             UserRole[]
+  papers            Paper[]   @relation("PaperAuthor")
+  reviews           Review[]
+  payments          Payment[]
+  notices           Notice[]
+
+  @@index([email])
+  @@map("users")
+}
+
+// ========================================
+// Paper Management
+// ========================================
+
+enum SubmissionType {
+  REGULAR
+  URGENT
+}
+
+enum PaperLanguage {
+  KOREAN
+  ENGLISH
+}
+
+enum PaperStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  REVISION_REQUESTED
+  ACCEPTED
+  REJECTED
+  PUBLISHED
+}
+
+model Paper {
+  id                String         @id @default(cuid())
+  submissionType    SubmissionType
+  language          PaperLanguage
+  titleKo           String
+  titleEn           String
+  abstractKo        String         @db.Text
+  abstractEn        String         @db.Text
+  keywords          String[]
+  researchField     String
+  hasFunding        Boolean        @default(false)
+  fundingInfo       String?        @db.Text
+  status            PaperStatus    @default(DRAFT)
+  submittedAt       DateTime?
+  acceptedAt        DateTime?
+  publishedVolume   Int?
+  publishedIssue    Int?
+  publishedYear     Int?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  // Relations
+  authorId          String
+  author            User           @relation("PaperAuthor", fields: [authorId], references: [id])
+  paperAuthors      PaperAuthor[]
+  files             PaperFile[]
+  reviews           Review[]
+  payments          Payment[]
+
+  @@index([status])
+  @@index([authorId])
+  @@index([submittedAt])
+  @@map("papers")
+}
+
+enum AuthorType {
+  FIRST_AUTHOR
+  CORRESPONDING_AUTHOR
+  CO_AUTHOR
+}
+
+model PaperAuthor {
+  id             String     @id @default(cuid())
+  paperId        String
+  userId         String?
+  nameKo         String
+  nameEn         String
+  affiliationKo  String
+  affiliationEn  String
+  email          String
+  orcid          String?
+  authorType     AuthorType
+  authorOrder    Int
+  isCorresponding Boolean   @default(false)
+  createdAt      DateTime   @default(now())
+
+  // Relations
+  paper          Paper      @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([paperId])
+  @@map("paper_authors")
+}
+
+enum FileType {
+  MANUSCRIPT
+  REVIEW_OPINION
+  COPYRIGHT_AGREEMENT
+  CONFLICT_OF_INTEREST
+  SIMILARITY_CHECK
+  OTHER
+}
+
+model PaperFile {
+  id          String   @id @default(cuid())
+  paperId     String
+  fileType    FileType
+  fileName    String
+  filePath    String
+  fileSize    Int
+  mimeType    String
+  version     Int      @default(1)
+  uploadedAt  DateTime @default(now())
+
+  // Relations
+  paper       Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([paperId])
+  @@map("paper_files")
+}
+
+// ========================================
+// Review Process
+// ========================================
+
+enum ReviewStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ReviewDecision {
+  ACCEPT
+  MINOR_REVISION
+  MAJOR_REVISION
+  REJECT
+}
+
+model Review {
+  id          String          @id @default(cuid())
+  paperId     String
+  reviewerId  String
+  assignedAt  DateTime        @default(now())
+  dueDate     DateTime
+  status      ReviewStatus    @default(ASSIGNED)
+  decision    ReviewDecision?
+  comments    String?         @db.Text
+  submittedAt DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  // Relations
+  paper       Paper           @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  reviewer    User            @relation(fields: [reviewerId], references: [id])
+  scores      ReviewScore[]
+
+  @@index([paperId])
+  @@index([reviewerId])
+  @@index([status])
+  @@map("reviews")
+}
+
+enum ReviewCriterion {
+  ORIGINALITY
+  METHODOLOGY
+  RELIABILITY
+  ACADEMIC_VALUE
+  PRESENTATION
+}
+
+model ReviewScore {
+  id         String          @id @default(cuid())
+  reviewId   String
+  criterion  ReviewCriterion
+  score      Int             // 1-5
+  createdAt  DateTime        @default(now())
+
+  // Relations
+  review     Review          @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+  @@map("review_scores")
+}
+
+// ========================================
+// Payment System
+// ========================================
+
+enum PaymentType {
+  MEMBERSHIP_FEE
+  REVIEW_FEE
+  PUBLICATION_FEE
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  BANK_TRANSFER
+  VIRTUAL_ACCOUNT
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  userId        String
+  paperId       String?
+  paymentType   PaymentType
+  amount        Int
+  status        PaymentStatus @default(PENDING)
+  paymentMethod PaymentMethod
+  paymentKey    String?
+  paidAt        DateTime?
+  receiptUrl    String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  user          User          @relation(fields: [userId], references: [id])
+  paper         Paper?        @relation(fields: [paperId], references: [id])
+  items         PaymentItem[]
+
+  @@index([userId])
+  @@index([paperId])
+  @@index([status])
+  @@map("payments")
+}
+
+enum PaymentItemType {
+  BASE_PUBLICATION_FEE
+  EXTRA_PAGE
+  FUNDING_ACKNOWLEDGMENT
+  MEMBERSHIP_REGULAR
+  MEMBERSHIP_STUDENT
+  MEMBERSHIP_LIFETIME
+  REVIEW_REGULAR
+  REVIEW_URGENT
+}
+
+model PaymentItem {
+  id         String          @id @default(cuid())
+  paymentId  String
+  itemType   PaymentItemType
+  quantity   Int             @default(1)
+  unitPrice  Int
+  totalPrice Int
+  createdAt  DateTime        @default(now())
+
+  // Relations
+  payment    Payment         @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@map("payment_items")
+}
+
+// ========================================
+// Notice System
+// ========================================
+
+enum NoticeCategory {
+  GENERAL
+  SUBMISSION
+  CONFERENCE
+  ANNOUNCEMENT
+}
+
+model Notice {
+  id          String         @id @default(cuid())
+  category    NoticeCategory
+  title       String
+  content     String         @db.Text
+  authorId    String
+  isPinned    Boolean        @default(false)
+  views       Int            @default(0)
+  publishedAt DateTime       @default(now())
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // Relations
+  author      User           @relation(fields: [authorId], references: [id])
+
+  @@index([category])
+  @@index([isPinned])
+  @@index([publishedAt])
+  @@map("notices")
+}
+
+// ========================================
+// Journal Information
+// ========================================
+
+model Journal {
+  id             String   @id @default(cuid())
+  volume         Int
+  issue          Int
+  publishedYear  Int
+  publishedMonth Int
+  coverImage     String?
+  description    String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([volume, issue, publishedYear])
+  @@index([publishedYear, publishedMonth])
+  @@map("journals")
+}
